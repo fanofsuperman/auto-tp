@@ -1,0 +1,362 @@
+-- LocalScript to put in StarterPlayerScripts
+
+local player = game.Players.LocalPlayer
+
+-- Positions A and B
+local positionA = Vector3.new(31.7846, -114.5033, 15.8032)
+local positionB = Vector3.new(37.4428, -114.5033, 15.8033)
+
+-- Ignore player names for the 8-stud check
+local ignorePlayers = { "xyrrzxx", "RobloxGamer_11249" }
+
+-- Persistent states
+local autoTeleportEnabled = false
+local selectedPosition = nil
+local autoTeleportConnection = nil
+local guiVisible = false
+
+-- Store character references
+local character
+local humanoidRootPart
+
+-- Function to initialize character
+local function initializeCharacter()
+    character = player.Character or player.CharacterAdded:Wait()
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+end
+
+-- Initialize character
+initializeCharacter()
+
+-- Create GUI function (will be called on start and respawn)
+local function createGUI()
+    -- Clear existing GUI if any
+    local existingGui = player.PlayerGui:FindFirstChild("TeleportGUI")
+    if existingGui then
+        existingGui:Destroy()
+    end
+
+    -- Create GUI
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "TeleportGUI"
+    screenGui.ResetOnSpawn = false -- This is key for persistence!
+    screenGui.Parent = player.PlayerGui
+
+    -- Toggle Button (always visible)
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Size = UDim2.new(0, 40, 0, 40)
+    toggleButton.Position = UDim2.new(0, 20, 0.5, -20)
+    toggleButton.AnchorPoint = Vector2.new(0, 0.5)
+    toggleButton.BackgroundColor3 = guiVisible and Color3.fromRGB(220, 120, 32) or Color3.fromRGB(32, 120, 220)
+    toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.Font = Enum.Font.SourceSansBold
+    toggleButton.TextSize = 16
+    toggleButton.Text = guiVisible and "✕" or "☰"
+    toggleButton.Parent = screenGui
+
+    -- Rounded corners for toggle button
+    local toggleCorner = Instance.new("UICorner")
+    toggleCorner.CornerRadius = UDim.new(0, 8)
+    toggleCorner.Parent = toggleButton
+
+    -- Main frame
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 300, 0, 150)
+    frame.Position = UDim2.new(0.5, -150, 0.5, -75)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    frame.BorderSizePixel = 0
+    frame.Visible = guiVisible
+    frame.Parent = screenGui
+
+    -- Make the frame draggable
+    local dragInput, dragStart, startPos
+    local function onDragStart(input)
+        dragStart = input.Position
+        startPos = frame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragInput = nil
+            end
+        end)
+    end
+
+    local function onDragMove(input)
+        if dragStart then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            onDragStart(input)
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragStart then
+            onDragMove(input)
+        end
+    end)
+
+    -- Create rounded corners
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.SourceSansSemibold
+    title.TextSize = 18
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Text = "Select a Position"
+    title.TextXAlignment = Enum.TextXAlignment.Center
+    title.Parent = frame
+
+    local buttonA = Instance.new("TextButton")
+    buttonA.Size = UDim2.new(0, 260, 0, 40)
+    buttonA.Position = UDim2.new(0, 20, 0, 40)
+    buttonA.Font = Enum.Font.SourceSansBold
+    buttonA.TextSize = 16
+    buttonA.TextColor3 = Color3.fromRGB(255, 255, 255)
+    buttonA.BackgroundColor3 = Color3.fromRGB(32, 120, 220)
+    buttonA.Text = "Select Position A"
+    buttonA.Parent = frame
+
+    local buttonB = Instance.new("TextButton")
+    buttonB.Size = UDim2.new(0, 260, 0, 40)
+    buttonB.Position = UDim2.new(0, 20, 0, 90)
+    buttonB.Font = Enum.Font.SourceSansBold
+    buttonB.TextSize = 16
+    buttonB.TextColor3 = Color3.fromRGB(255, 255, 255)
+    buttonB.BackgroundColor3 = Color3.fromRGB(32, 120, 220)
+    buttonB.Text = "Select Position B"
+    buttonB.Parent = frame
+
+    -- Back Button
+    local backButton = Instance.new("TextButton")
+    backButton.Size = UDim2.new(0, 100, 0, 30)
+    backButton.Position = UDim2.new(0, 20, 0, 40)
+    backButton.Font = Enum.Font.SourceSansBold
+    backButton.TextSize = 16
+    backButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    backButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    backButton.Text = "Back"
+    backButton.Visible = false
+    backButton.Parent = frame
+
+    -- Auto Teleport Toggle Button
+    local autoTeleportButton = Instance.new("TextButton")
+    autoTeleportButton.Size = UDim2.new(0, 260, 0, 40)
+    autoTeleportButton.Position = UDim2.new(0, 20, 0, 80)
+    autoTeleportButton.Font = Enum.Font.SourceSansBold
+    autoTeleportButton.TextSize = 16
+    autoTeleportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    autoTeleportButton.BackgroundColor3 = autoTeleportEnabled and Color3.fromRGB(220, 0, 0) or Color3.fromRGB(0, 128, 0)
+    autoTeleportButton.Text = autoTeleportEnabled and "Auto Teleport: ON" or "Auto Teleport: OFF"
+    autoTeleportButton.Visible = false
+    autoTeleportButton.Parent = frame
+
+    -- Status label
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Size = UDim2.new(1, 0, 0, 20)
+    statusLabel.Position = UDim2.new(0, 0, 0, 125)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Font = Enum.Font.SourceSans
+    statusLabel.TextSize = 14
+    statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    statusLabel.Text = "Status: Inactive"
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Center
+    statusLabel.Parent = frame
+
+    -- Restore previous state if we had a position selected
+    if selectedPosition then
+        if selectedPosition == positionA then
+            title.Text = "Auto Teleport - Position A"
+        else
+            title.Text = "Auto Teleport - Position B"
+        end
+        buttonA.Visible = false
+        buttonB.Visible = false
+        backButton.Visible = true
+        autoTeleportButton.Visible = true
+        statusLabel.Text = autoTeleportEnabled and "Status: Auto Teleport Active" or "Status: Ready"
+    end
+
+    -- Toggle GUI visibility
+    toggleButton.MouseButton1Click:Connect(function()
+        guiVisible = not guiVisible
+        frame.Visible = guiVisible
+        
+        -- Change toggle button appearance when GUI is open
+        if guiVisible then
+            toggleButton.BackgroundColor3 = Color3.fromRGB(220, 120, 32)
+            toggleButton.Text = "✕"
+        else
+            toggleButton.BackgroundColor3 = Color3.fromRGB(32, 120, 220)
+            toggleButton.Text = "☰"
+            -- Reset GUI state when hiding
+            if not selectedPosition then
+                resetGUI()
+            end
+        end
+    end)
+
+    -- Function to reset GUI state when hiding
+    local function resetGUI()
+        if not selectedPosition then -- Only reset if no position is selected
+            title.Text = "Select a Position"
+            buttonA.Visible = true
+            buttonB.Visible = true
+            backButton.Visible = false
+            autoTeleportButton.Visible = false
+            statusLabel.Text = "Status: Inactive"
+        end
+    end
+
+    -- Function to check if the target position is occupied by another player (8 studs check)
+    local function isPositionOccupied(targetPosition)
+        for _, otherPlayer in pairs(game.Players:GetPlayers()) do
+            if otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local otherHumanoidRootPart = otherPlayer.Character.HumanoidRootPart
+                -- Check if the other player is not the current player, not in ignore list, and is within 8 studs of the target position
+                if otherPlayer.Name ~= player.Name and not table.find(ignorePlayers, otherPlayer.Name) then
+                    local distance = (otherHumanoidRootPart.Position - targetPosition).Magnitude
+                    if distance < 8 then
+                        return true -- The position is occupied by another player
+                    end
+                end
+            end
+        end
+        return false -- Position is free
+    end
+
+    -- Function to check if player is WITHIN 130 studs of target position
+    local function isWithin130Studs(targetPosition)
+        if not humanoidRootPart then return false end
+        local distance = (humanoidRootPart.Position - targetPosition).Magnitude
+        return distance <= 130
+    end
+
+    -- Function to attempt auto teleport
+    local function attemptAutoTeleport()
+        if not selectedPosition or not humanoidRootPart then
+            return false
+        end
+        
+        -- Check 8 studs: Don't teleport if position is occupied by non-ignored player
+        if isPositionOccupied(selectedPosition) then
+            statusLabel.Text = "Status: Position Occupied"
+            return false
+        end
+        
+        -- Check 130 studs: Only teleport if player is WITHIN 130 studs of target
+        if isWithin130Studs(selectedPosition) then
+            humanoidRootPart.CFrame = CFrame.new(selectedPosition)
+            statusLabel.Text = "Status: Auto Teleported!"
+            return true
+        end
+        
+        return false
+    end
+
+    -- Auto teleport loop
+    local function startAutoTeleport()
+        if autoTeleportConnection then
+            autoTeleportConnection:Disconnect()
+        end
+        
+        autoTeleportConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if autoTeleportEnabled and selectedPosition then
+                attemptAutoTeleport()
+            end
+        end)
+    end
+
+    -- Handle selection of Position A
+    buttonA.MouseButton1Click:Connect(function()
+        selectedPosition = positionA
+        title.Text = "Auto Teleport - Position A"
+        
+        -- Change the UI
+        buttonA.Visible = false
+        buttonB.Visible = false
+        backButton.Visible = true
+        autoTeleportButton.Visible = true
+        
+        statusLabel.Text = "Status: Ready - Position A"
+    end)
+
+    -- Handle selection of Position B
+    buttonB.MouseButton1Click:Connect(function()
+        selectedPosition = positionB
+        title.Text = "Auto Teleport - Position B"
+        
+        -- Change the UI
+        buttonA.Visible = false
+        buttonB.Visible = false
+        backButton.Visible = true
+        autoTeleportButton.Visible = true
+        
+        statusLabel.Text = "Status: Ready - Position B"
+    end)
+
+    -- Handle auto teleport toggle
+    autoTeleportButton.MouseButton1Click:Connect(function()
+        autoTeleportEnabled = not autoTeleportEnabled
+        
+        if autoTeleportEnabled then
+            autoTeleportButton.Text = "Auto Teleport: ON"
+            autoTeleportButton.BackgroundColor3 = Color3.fromRGB(220, 0, 0)
+            statusLabel.Text = "Status: Auto Teleport Active"
+            startAutoTeleport()
+        else
+            autoTeleportButton.Text = "Auto Teleport: OFF"
+            autoTeleportButton.BackgroundColor3 = Color3.fromRGB(0, 128, 0)
+            statusLabel.Text = "Status: Auto Teleport Off"
+            if autoTeleportConnection then
+                autoTeleportConnection:Disconnect()
+                autoTeleportConnection = nil
+            end
+        end
+    end)
+
+    -- Handle back button functionality
+    backButton.MouseButton1Click:Connect(function()
+        -- Reset the UI to show Position A and B buttons again
+        title.Text = "Select a Position"
+        buttonA.Visible = true
+        buttonB.Visible = true
+        backButton.Visible = false
+        autoTeleportButton.Visible = false
+        
+        -- Turn off auto teleport when going back
+        autoTeleportEnabled = false
+        selectedPosition = nil
+        statusLabel.Text = "Status: Inactive"
+        
+        if autoTeleportConnection then
+            autoTeleportConnection:Disconnect()
+            autoTeleportConnection = nil
+        end
+    end)
+
+    -- Start auto teleport if it was enabled before respawn
+    if autoTeleportEnabled and selectedPosition then
+        startAutoTeleport()
+        statusLabel.Text = "Status: Auto Teleport Active"
+    end
+end
+
+-- Create the GUI initially
+createGUI()
+
+-- Handle character respawns
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoidRootPart = newCharacter:WaitForChild("HumanoidRootPart")
+    
+    -- Recreate GUI to ensure it persists
+    createGUI()
+end)
