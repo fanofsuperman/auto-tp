@@ -7,7 +7,7 @@ local positionA = Vector3.new(31.7846, -114.5033, 15.8032)
 local positionB = Vector3.new(37.4428, -114.5033, 15.8033)
 
 -- Ignore player names for the 8-stud check
-local ignorePlayers = { "xyrrzxx", "RobloxGamer_11249" }
+local ignorePlayers = { "exdiiiiiiii_i", "gila_gamir" }
 
 -- Persistent states
 local autoTeleportEnabled = false
